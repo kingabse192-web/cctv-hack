@@ -1,4 +1,6 @@
-# AB Search — Authorized Network & CCTV Inventory
+# AB Search 😊 — Authorized Network & CCTV Inventory
+
+**Repository:** https://github.com/kingabse192-web/cctv-hack · **Guide:** [GUIDE.md](GUIDE.md) · **Credits:** [AUTHORS.md](AUTHORS.md)
 
 ```
  █████╗ ██████╗    ███████╗███████╗ █████╗ ██████╗  ██████╗██╗  ██╗
@@ -225,6 +227,12 @@ git push -u origin main
 
 No remote or credentials are stored in this project. Supply your own GitHub
 repository URL and authentication when you are ready to publish.
+
+## Author
+
+Made by **AB** — [kingabse192-web](https://github.com/kingabse192-web).
+Full credits, including AI-assistant and open-source building blocks, are in
+[AUTHORS.md](AUTHORS.md). Step-by-step instructions are in [GUIDE.md](GUIDE.md).
 
 ## License
 
