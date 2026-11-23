@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import ipaddress
 import os
 import sys
+import time
 import webbrowser
 from pathlib import Path
 
@@ -15,6 +15,8 @@ from .bluetooth import BluetoothScan, scan_bluetooth
 from .classify import apply_classification, category_slug
 from .credentials import load_credential_store
 from .demo import DEMO_GATEWAY, DEMO_INTERFACE, DEMO_NETWORK, demo_bluetooth, demo_devices
+from .discovery import discover_hints, hints_by_ip
+from .history import compare_reports, format_diff, load_baseline
 from .models import Device
 from .net import (
     choose_interface,
@@ -49,7 +51,9 @@ def build_parser() -> argparse.ArgumentParser:
             "  absearch --demo --web          # safe demo dashboard\n"
             "  absearch --yes                 # scan detected LAN without prompts\n"
             "  absearch --network 192.168.1.0/24 --services --open\n"
-            "  absearch --interface eth0 --camera-ports --output reports\n"
+            "  absearch --deep --camera-ports --yes     # ONVIF/mDNS + TLS evidence\n"
+            "  absearch --baseline reports/old/report.json --yes\n"
+            "  absearch --watch 60 --yes --quiet        # rescan every 60 seconds\n"
         ),
     )
     parser.add_argument("--version", action="version", version=f"AB Search {__version__}")
@@ -74,6 +78,14 @@ def build_parser() -> argparse.ArgumentParser:
                           help="skip Bluetooth discovery")
     parser.add_argument("--bt-timeout", type=float, default=6.0, metavar="SEC",
                         help="Bluetooth scan duration (default: 6)")
+    parser.add_argument("--deep", action="store_true",
+                        help="advanced discovery (mDNS/SSDP/ONVIF) + TLS certificate evidence")
+    parser.add_argument("--discovery-timeout", type=float, default=2.5, metavar="SEC",
+                        help="duration of each advanced discovery probe (default: 2.5)")
+    parser.add_argument("--baseline", metavar="FILE",
+                        help="compare this scan against a previous report.json")
+    parser.add_argument("--watch", type=float, default=0.0, metavar="SEC",
+                        help="repeat the scan every SEC seconds (0 = single scan)")
     parser.add_argument("--output", default="inventory_reports", metavar="DIR",
                         help="base report directory (default: ./inventory_reports)")
     parser.add_argument("--format", default="json,csv,html", metavar="LIST",
@@ -192,6 +204,7 @@ def _collect_devices(args, network, gateway, store, console=None) -> list[Device
         for host in hosts
     ]
     ports = _selected_ports(args)
+    probed: dict[str, list] = {device.ip: [] for device in devices}
     if devices and ports:
         if not args.quiet:
             _say(
@@ -205,14 +218,26 @@ def _collect_devices(args, network, gateway, store, console=None) -> list[Device
             timeout=args.timeout,
             grab_banners=args.services,
             workers=args.workers,
+            deep=args.deep,
         )
-        for device in devices:
-            info = probed.get(device.ip, [])
-            device.ports = info
-            device.web = web_urls(device.ip, info)
-            device.rtsp = rtsp_urls(device.ip, info)
+
+    grouped_hints: dict[str, list] = {}
+    if args.deep and not args.quiet:
+        _say("Running advanced discovery (mDNS, SSDP, ONVIF)…", console, "dim")
+    if args.deep:
+        grouped_hints = hints_by_ip(discover_hints(timeout=args.discovery_timeout))
 
     for device in devices:
+        info = probed.get(device.ip, [])
+        device.ports = info
+        device.web = web_urls(device.ip, info)
+        device.rtsp = rtsp_urls(device.ip, info)
+        for hint in grouped_hints.get(device.ip, []):
+            device.hints.append(hint.to_text())
+            if not device.hostname and hint.name:
+                device.hostname = hint.name
+            if not device.vendor and hint.details.get("vendor"):
+                device.vendor = clean_vendor(hint.details["vendor"])
         apply_classification(device, gateway_ip=gateway)
         store.for_device(device)
     return devices
@@ -227,17 +252,21 @@ def _print_devices(devices: list[Device], console=None) -> None:
             from rich.table import Table
 
             table = Table(title="Discovered devices", show_lines=False, header_style="bold")
-            table.add_column("Category", style="bold", width=21, no_wrap=True)
-            table.add_column("IP", style="cyan", width=16, no_wrap=True)
-            table.add_column("Hostname", style="white", width=20, no_wrap=True)
-            table.add_column("Vendor", style="magenta", width=18, no_wrap=True)
-            table.add_column("MAC", style="cyan", width=17, no_wrap=True)
+            table.add_column("Category", style="bold")
+            table.add_column("IP", style="cyan", no_wrap=True)
+            table.add_column("Hostname", style="white")
+            table.add_column("Vendor", style="magenta")
+            table.add_column("MAC", style="cyan")
             table.add_column("Ports", style="green")
-            table.add_column("Links", width=11, no_wrap=True)
+            table.add_column("Links")
             styles = {
                 "camera": "bold red", "router": "bold blue",
                 "computer": "bold green", "phone": "bold magenta",
                 "unknown": "dim",
+            }
+            short_category = {
+                "camera": "CCTV", "router": "Router", "computer": "Computer",
+                "phone": "Phone", "unknown": "Unknown",
             }
             for device in devices:
                 links = []
@@ -246,7 +275,7 @@ def _print_devices(devices: list[Device], console=None) -> None:
                 if device.rtsp:
                     links.append("rtsp")
                 table.add_row(
-                    device.category,
+                    short_category.get(category_slug(device.category), device.category),
                     device.ip,
                     device.hostname or "—",
                     device.vendor or "—",
@@ -321,36 +350,102 @@ def main(argv: list[str] | None = None) -> int:
     extra_paths = [Path(path).expanduser() for path in args.credentials]
     store = load_credential_store(base_dir=base_dir, extra_paths=extra_paths)
 
-    mode = "demo" if args.demo else "live"
-    network = gateway = None
-    interface_name = ""
+    formats = tuple(
+        item.strip().lower()
+        for item in args.format.split(",")
+        if item.strip() in {"json", "csv", "html"}
+    ) or ("json", "csv", "html")
+
+    baseline = None
+    if args.baseline:
+        try:
+            baseline = load_baseline(Path(args.baseline).expanduser())
+        except (OSError, ValueError) as exc:
+            _say(f"Error: could not load baseline: {exc}", console, "red")
+            return 2
+
+    authorization = (
+        "demo data — no scan"
+        if args.demo
+        else ("confirmed by operator" if args.yes else "confirmed interactively")
+    )
+    options = {
+        "ports_scanned": _selected_ports(args),
+        "service_banners": args.services and not args.no_ports,
+        "bluetooth": args.bluetooth,
+        "bluetooth_timeout": args.bt_timeout,
+        "deep": args.deep,
+        "discovery_timeout": args.discovery_timeout if args.deep else 0,
+        "baseline": str(args.baseline) if args.baseline else "",
+        "watch_interval": args.watch,
+    }
+    serve_web = args.web and args.watch <= 0
+    if args.web and not serve_web:
+        _say("Note: --web is ignored in --watch mode; run a single scan for the dashboard.", console, "yellow")
+
+    def emit(devices, bluetooth, network, gateway, interface_name, previous):
+        report = build_report(
+            network=str(network),
+            interface=interface_name,
+            gateway=gateway or "",
+            devices=devices,
+            bluetooth=bluetooth,
+            credential_store=store,
+            authorization=authorization,
+            mode="demo" if args.demo else "live",
+            options=options,
+        )
+        diff = None
+        if previous is not None:
+            diff = compare_reports(previous, report)
+            report["diff"] = diff
+        output_dir = report_path(Path(args.output).expanduser())
+        paths = write_reports(report, output_dir, formats=formats)
+        _print_devices(devices, console)
+        print_report_paths(paths)
+        if diff is not None and not args.quiet:
+            _say("\n" + format_diff(diff), console, "bold")
+        return report, output_dir
+
     if args.demo:
         network = parse_network(DEMO_NETWORK)
         gateway = DEMO_GATEWAY
-        interface_name = DEMO_INTERFACE
         devices = demo_devices()
-        bluetooth = BluetoothScan(
-            devices=demo_bluetooth(), supported=True, error=""
-        )
+        bluetooth = BluetoothScan(devices=demo_bluetooth(), supported=True)
         if not args.quiet:
             _say(
                 "Demo mode: using sample devices. No network or Bluetooth scan was performed.",
                 console,
                 "bold green",
             )
-    else:
+        report, output_dir = emit(devices, bluetooth, network, gateway, DEMO_INTERFACE, baseline)
+        if serve_web:
+            from .web import serve_report
+
+            serve_report(output_dir, port=args.web_port, open_browser=not args.no_open)
+        return 0
+
+    try:
+        network, gateway = _select_network(args, console)
+        if not args.quiet:
+            _say(f"Target network: {network}   Gateway: {gateway or 'unknown'}", console, "bold")
+            if args.no_ports:
+                _say("Port checks disabled.", console, "dim")
+            else:
+                _say(f"TCP ports: {len(_selected_ports(args))} selected", console, "dim")
+        interfaces = detect_interfaces()
+        interface_name = args.interface or (interfaces[0].name if interfaces else "")
+    except ValueError as exc:
+        _say(f"Error: {exc}", console, "red")
+        return 2
+
+    previous = baseline
+    first = True
+    while True:
         try:
-            network, gateway = _select_network(args, console)
-            if not args.quiet:
-                _say(f"Target network: {network}   Gateway: {gateway or 'unknown'}", console, "bold")
-                if args.no_ports:
-                    _say("Port checks disabled.", console, "dim")
-                else:
-                    _say(f"TCP ports: {len(_selected_ports(args))} selected", console, "dim")
-            interface_name = args.interface or (detect_interfaces()[0].name if detect_interfaces() else "")
             devices = _collect_devices(args, network, gateway, store, console)
             if args.bluetooth:
-                if not args.quiet:
+                if first and not args.quiet:
                     _say("Scanning Bluetooth advertisements…", console, "dim")
                 bluetooth = scan_bluetooth(args.bt_timeout)
             else:
@@ -359,60 +454,37 @@ def main(argv: list[str] | None = None) -> int:
             _say(f"Error: {exc}", console, "red")
             return 2
 
-    if bluetooth.error and not args.quiet:
-        _say(f"Note: {bluetooth.error}", console, "yellow")
+        if bluetooth.error and first and not args.quiet:
+            _say(f"Note: {bluetooth.error}", console, "yellow")
 
-    formats = tuple(
-        item.strip().lower()
-        for item in args.format.split(",")
-        if item.strip() in {"json", "csv", "html"}
-    ) or ("json", "csv", "html")
+        report, output_dir = emit(devices, bluetooth, network, gateway, interface_name, previous)
+        previous = report
 
-    report = build_report(
-        network=str(network),
-        interface=interface_name,
-        gateway=gateway or "",
-        devices=devices,
-        bluetooth=bluetooth,
-        credential_store=store,
-        authorization="demo data — no scan" if args.demo else (
-            "confirmed by operator" if args.yes else "confirmed interactively"
-        ),
-        mode=mode,
-        options={
-            "ports_scanned": _selected_ports(args),
-            "service_banners": args.services and not args.no_ports,
-            "bluetooth": args.bluetooth,
-            "bluetooth_timeout": args.bt_timeout,
-        },
-    )
-    output_dir = report_path(Path(args.output).expanduser())
-    paths = write_reports(report, output_dir, formats=formats)
-    _print_devices(devices, console)
-    print_report_paths(paths)
+        if first and serve_web:
+            from .web import serve_report
 
-    if args.web:
-        from .web import serve_report
+            serve_report(output_dir, port=args.web_port, open_browser=not args.no_open)
+            return 0
 
-        serve_report(
-            output_dir,
-            port=args.web_port,
-            open_browser=not args.no_open,
-        )
-        return 0
-
-    if not args.no_open and not args.demo:
-        if args.open_page:
-            open_management_page(devices, store, console)
-        elif sys.stdin.isatty():
-            try:
-                answer = input("\nOpen a device management page now? [y/N] ").strip().lower()
-            except (EOFError, OSError):
-                answer = ""
-            if answer in {"y", "yes"}:
+        if first and not args.no_open:
+            if args.open_page:
                 open_management_page(devices, store, console)
-    elif args.open_page:
-        open_management_page(devices, store, console)
+            elif sys.stdin.isatty():
+                try:
+                    answer = input("\nOpen a device management page now? [y/N] ").strip().lower()
+                except (EOFError, OSError):
+                    answer = ""
+                if answer in {"y", "yes"}:
+                    open_management_page(devices, store, console)
+        elif first and args.open_page:
+            open_management_page(devices, store, console)
+
+        first = False
+        if args.watch <= 0:
+            break
+        if not args.quiet:
+            _say(f"\nWaiting {args.watch:g}s before the next scan (Ctrl+C to stop)…", console, "dim")
+        time.sleep(args.watch)
 
     return 0
 

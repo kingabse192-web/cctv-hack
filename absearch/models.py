@@ -22,6 +22,9 @@ class PortInfo:
     service: str = ""
     state: str = "open"
     banner: str = ""
+    # Optional structured evidence collected in --deep mode (TLS certificate
+    # subject/SAN/issuer, protocol notes, etc.).
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -55,6 +58,11 @@ class Device:
     credential_vendor: str = "default"
     credentials: list[CredentialPair] = field(default_factory=list)
     is_gateway: bool = False
+    # Passive/active discovery evidence (mDNS, SSDP, ONVIF) as short strings.
+    hints: list[str] = field(default_factory=list)
+    # Filled in by report.build_report() after risk assessment and diffing.
+    risk: dict[str, Any] = field(default_factory=dict)
+    diff: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

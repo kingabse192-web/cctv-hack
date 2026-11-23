@@ -17,8 +17,8 @@ DEMO_GATEWAY = "192.168.1.1"
 DEMO_INTERFACE = "wlan0 (demo)"
 
 
-def _port(port: int, service: str = "", banner: str = "") -> PortInfo:
-    return PortInfo(port=port, service=service, state="open", banner=banner)
+def _port(port: int, service: str = "", banner: str = "", metadata: dict | None = None) -> PortInfo:
+    return PortInfo(port=port, service=service, state="open", banner=banner, metadata=metadata or {})
 
 
 def demo_devices() -> list[Device]:
@@ -31,9 +31,14 @@ def demo_devices() -> list[Device]:
             ports=[
                 _port(53, "dns"),
                 _port(80, "http", "HTTP/1.1 200 OK Server: Archer AX55"),
-                _port(443, "https"),
+                _port(443, "https", metadata={
+                    "cert_cn": "router.local",
+                    "cert_issuer": "Archer Local CA",
+                    "cert_san": "router.local, archer-ax55",
+                }),
                 _port(1900, "ssdp"),
             ],
+            hints=["ssdp → upnp:rootdevice → TP-Link Archer AX55"],
             notes=["demo router"],
         ),
         Device(
@@ -47,6 +52,7 @@ def demo_devices() -> list[Device]:
                 _port(8000, "camera-sdk"),
                 _port(8899, "camera-web"),
             ],
+            hints=["onvif → IPC-64 (vendor=Hikvision)"],
             notes=["demo camera"],
         ),
         Device(
@@ -59,6 +65,7 @@ def demo_devices() -> list[Device]:
                 _port(554, "rtsp", "RTSP/1.0 200 OK"),
                 _port(9000, "http-alt"),
             ],
+            hints=["mdns → _onvif._tcp.local → Reolink-E1"],
             notes=["demo camera"],
         ),
         Device(
@@ -67,6 +74,7 @@ def demo_devices() -> list[Device]:
             vendor="Apple",
             hostname="iPhone",
             ports=[_port(62078, "phone-sync")],
+            hints=["mdns → _airplay._tcp.local → iPhone"],
             notes=["demo phone"],
         ),
         Device(

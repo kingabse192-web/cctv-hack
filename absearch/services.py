@@ -116,9 +116,53 @@ def is_camera_service(port: int, service: str, banner: str) -> bool:
     return any(hint in lowered for hint in _CAMERA_HINTS)
 
 
-def _http_probe(host: str, port: int, timeout: float, tls: bool) -> tuple[str, str]:
+def _cert_metadata(cert: dict) -> dict[str, str]:
+    def common_name(parts) -> str:
+        for key, value in parts or ():
+            if key == "commonName":
+                return str(value)[:120]
+        return ""
+
+    subject = common_name(cert.get("subject"))
+    issuer = common_name(cert.get("issuer"))
+    sans = [
+        str(value)
+        for key, value in cert.get("subjectAltName", ()) or ()
+        if key in {"DNS", "IP Address"}
+    ][:4]
+    metadata: dict[str, str] = {}
+    if subject:
+        metadata["cert_cn"] = subject
+    if issuer:
+        metadata["cert_issuer"] = issuer
+    if sans:
+        metadata["cert_san"] = ", ".join(sans)
+    if cert.get("notAfter"):
+        metadata["cert_expires"] = str(cert["notAfter"])[:60]
+    return metadata
+
+
+def tls_certificate(host: str, port: int = 443, timeout: float = 1.0) -> dict[str, str]:
+    """Read (but never validate or pin) a TLS certificate for identification."""
+
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            sock.settimeout(timeout)
+            with context.wrap_socket(sock, server_hostname=host) as tls_sock:
+                return _cert_metadata(tls_sock.getpeercert() or {})
+    except Exception:
+        return {}
+
+
+def _http_probe(
+    host: str, port: int, timeout: float, tls: bool, deep: bool = False
+) -> tuple[str, str, dict[str, str]]:
     request = f"HEAD / HTTP/1.0\r\nHost: {host}\r\nUser-Agent: absearch\r\nConnection: close\r\n\r\n".encode()
     raw = b""
+    metadata: dict[str, str] = {}
     if tls:
         context = ssl.create_default_context()
         context.check_hostname = False
@@ -126,6 +170,8 @@ def _http_probe(host: str, port: int, timeout: float, tls: bool) -> tuple[str, s
         with socket.create_connection((host, port), timeout=timeout) as sock:
             sock.settimeout(timeout)
             with context.wrap_socket(sock, server_hostname=host) as tls_sock:
+                if deep:
+                    metadata = _cert_metadata(tls_sock.getpeercert() or {})
                 tls_sock.sendall(request)
                 raw = tls_sock.recv(1024)
     else:
@@ -137,7 +183,7 @@ def _http_probe(host: str, port: int, timeout: float, tls: bool) -> tuple[str, s
     service = "https" if tls or banner.startswith("HTTP/") and port in _TLS_PORTS else "http"
     if not banner.startswith("HTTP/"):
         service = "https" if tls else SERVICE_BY_PORT.get(port, "http-alt")
-    return service, banner
+    return service, banner, metadata
 
 
 def _rtsp_probe(host: str, port: int, timeout: float) -> tuple[str, str]:
@@ -169,6 +215,7 @@ def probe_port(
     port: int,
     timeout: float = 0.7,
     grab_banner: bool = False,
+    deep: bool = False,
 ) -> PortInfo | None:
     """Check one TCP port.  Returns ``None`` when the port is closed/filtered."""
 
@@ -180,12 +227,13 @@ def probe_port(
 
     service = SERVICE_BY_PORT.get(port, "unknown")
     banner = ""
+    metadata: dict[str, str] = {}
     tls = port in _TLS_PORTS
 
     if grab_banner:
         try:
             if port in _HTTP_PORTS or port in _TLS_PORTS:
-                service, banner = _http_probe(host, port, timeout, tls)
+                service, banner, metadata = _http_probe(host, port, timeout, tls, deep)
             elif port in RTSP_PORTS:
                 service, banner = _rtsp_probe(host, port, timeout)
             elif port in {21, 22, 23, 25, 110, 143}:
@@ -202,6 +250,7 @@ def probe_port(
         service=service,
         state="open",
         banner=banner,
+        metadata=metadata,
     )
 
 
@@ -211,6 +260,7 @@ def probe_ports(
     timeout: float = 0.7,
     grab_banners: bool = False,
     workers: int = 48,
+    deep: bool = False,
 ) -> dict[str, list[PortInfo]]:
     """Probe many host/port pairs concurrently."""
 
@@ -221,7 +271,7 @@ def probe_ports(
 
     with ThreadPoolExecutor(max_workers=max(1, min(workers, len(tasks)))) as pool:
         futures = {
-            pool.submit(probe_port, host, port, timeout, grab_banners): (host, port)
+            pool.submit(probe_port, host, port, timeout, grab_banners, deep): (host, port)
             for host, port in tasks
         }
         for future in as_completed(futures):

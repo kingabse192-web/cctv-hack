@@ -15,12 +15,23 @@ from . import __version__
 from .bluetooth import BluetoothScan
 from .credentials import CredentialReference, CredentialStore
 from .models import CATEGORIES, Device
+from .risk import assess as assess_risk
+from .risk import summary_counts as risk_counts
 
 SCHEMA = "absearch.report.v1"
 
 
 def _timestamp() -> str:
     return dt.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _top_ports(devices: list[Device], limit: int = 8) -> list[dict[str, Any]]:
+    counts: dict[int, int] = {}
+    for device in devices:
+        for port in set(device.open_ports):
+            counts[port] = counts.get(port, 0) + 1
+    top = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:limit]
+    return [{"port": port, "devices": count} for port, count in top]
 
 
 def build_report(
@@ -34,6 +45,7 @@ def build_report(
     authorization: str = "confirmed by operator",
     mode: str = "live",
     options: dict[str, Any] | None = None,
+    diff: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the JSON-serialisable report consumed by the CLI and dashboard."""
 
@@ -45,10 +57,14 @@ def build_report(
         counts[device.category] = counts.get(device.category, 0) + 1
 
     references: list[dict[str, Any]] = []
+    assessments = []
     for device in devices:
         reference: CredentialReference = credential_store.for_device(device)
         device.credential_vendor = reference.vendor
         device.credentials = reference.pairs
+        assessment = assess_risk(device)
+        device.risk = assessment.to_dict()
+        assessments.append(assessment)
         references.append(
             {
                 "ip": device.ip,
@@ -87,8 +103,11 @@ def build_report(
             "phones": counts.get("Phone", 0),
             "unknown": counts.get("Unknown device", 0),
             "bluetooth_devices": len(bluetooth.devices),
+            "risk": risk_counts(assessments),
+            "top_ports": _top_ports(devices),
         },
         "devices": [device.to_dict() for device in devices],
+        "diff": diff,
         "bluetooth": {
             "supported": bluetooth.supported,
             "error": bluetooth.error,
@@ -140,7 +159,8 @@ def devices_csv(devices: list[dict[str, Any]]) -> str:
     writer.writerow(
         [
             "ip", "mac", "vendor", "hostname", "category", "confidence",
-            "ports", "services", "web_urls", "rtsp_urls", "notes",
+            "risk_level", "risk_score", "ports", "services", "web_urls",
+            "rtsp_urls", "discovery_hints", "notes",
         ]
     )
     for device in devices:
@@ -153,6 +173,8 @@ def devices_csv(devices: list[dict[str, Any]]) -> str:
                 _csv_safe(device.get("hostname", "")),
                 _csv_safe(device.get("category", "")),
                 _csv_safe(device.get("confidence", "")),
+                _csv_safe(device.get("risk", {}).get("level", "")),
+                _csv_safe(device.get("risk", {}).get("score", "")),
                 _csv_safe(" ".join(str(port.get("port", "")) for port in ports)),
                 _csv_safe(
                     " ".join(
@@ -163,6 +185,7 @@ def devices_csv(devices: list[dict[str, Any]]) -> str:
                 ),
                 _csv_safe(" ".join(device.get("web", []))),
                 _csv_safe(" ".join(device.get("rtsp", []))),
+                _csv_safe("; ".join(device.get("hints", []))),
                 _csv_safe("; ".join(device.get("notes", []))),
             ]
         )
@@ -188,10 +211,13 @@ def render_dashboard(report: dict[str, Any]) -> str:
     mode = str(meta.get("mode", "live"))
     title = "AB Search — Demo inventory" if mode == "demo" else "AB Search — Network inventory"
     payload = safe_json(report, indent=None)
+    # Replace the small placeholders first: if a device hostname happened to
+    # contain one of those tokens, replacing it after the JSON was embedded
+    # could corrupt the report payload.
     return (
-        template.replace("__REPORT_JSON__", payload)
-        .replace("__PAGE_TITLE__", html.escape(title))
+        template.replace("__PAGE_TITLE__", html.escape(title))
         .replace("__MODE_BADGE__", "Demo data" if mode == "demo" else "Live scan")
+        .replace("__REPORT_JSON__", payload)
     )
 
 

@@ -130,6 +130,9 @@ def classify_device(device: Device, gateway_ip: str = "") -> Classification:
     vendor = device.vendor or ""
     hostname = device.hostname or ""
     banners = _banner_text(device)
+    hints = " ".join(getattr(device, "hints", []) or [])
+    if hints:
+        banners += " " + hints
 
     # Camera evidence -----------------------------------------------------
     for port in ports:
@@ -165,7 +168,7 @@ def classify_device(device: Device, gateway_ip: str = "") -> Classification:
     if router_vendor:
         scores[ROUTER] += 0.65
         reasons[ROUTER].append(f"router vendor ({router_vendor})")
-    router_host = _contains(hostname, ROUTER_HOST_HINTS)
+    router_host = _contains(f"{hostname} {hints}", ROUTER_HOST_HINTS)
     if router_host:
         scores[ROUTER] += 0.55
         reasons[ROUTER].append(f"router-like hostname ({router_host})")
@@ -182,7 +185,7 @@ def classify_device(device: Device, gateway_ip: str = "") -> Classification:
     if phone_vendor:
         scores[PHONE] += 0.55
         reasons[PHONE].append(f"phone vendor ({phone_vendor})")
-    phone_host = _contains(hostname, PHONE_HOST_HINTS)
+    phone_host = _contains(f"{hostname} {hints}", PHONE_HOST_HINTS)
     if phone_host:
         scores[PHONE] += 0.65
         reasons[PHONE].append(f"phone-like hostname ({phone_host})")
@@ -197,7 +200,7 @@ def classify_device(device: Device, gateway_ip: str = "") -> Classification:
     if computer_vendor:
         scores[COMPUTER] += 0.45
         reasons[COMPUTER].append(f"computer vendor ({computer_vendor})")
-    computer_host = _contains(hostname, COMPUTER_HOST_HINTS)
+    computer_host = _contains(f"{hostname} {hints}", COMPUTER_HOST_HINTS)
     if computer_host:
         scores[COMPUTER] += 0.45
         reasons[COMPUTER].append(f"computer-like hostname ({computer_host})")
