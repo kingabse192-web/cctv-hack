@@ -401,16 +401,15 @@ def ping_sweep(
     hosts = network_hosts(network, limit=max_hosts)
     found: list[str] = []
 
-    ping_args = (
-        [ping, "-n", "1", "-w", "1000", ip]
-        if os.name == "nt"
-        else [ping, "-c", "1", "-W", "1", ip]
-    )
-
     def probe(ip: str) -> str | None:
+        ping_args = (
+            [ping, "-n", "1", "-w", "1000", ip]
+            if os.name == "nt"
+            else [ping, "-c", "1", "-W", "1", ip]
+        )
         try:
             result = subprocess.run(
-                ping_args[:-1] + [ip],
+                ping_args,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=2,

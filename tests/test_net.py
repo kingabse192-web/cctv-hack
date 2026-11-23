@@ -1,5 +1,6 @@
 import ipaddress
 
+from absearch import net
 from absearch.models import Device, PortInfo
 from absearch.net import (
     HostRecord,
@@ -59,6 +60,25 @@ def test_merge_hosts_fills_mac_from_arp():
     assert len(merged) == 1
     assert merged[0].mac == "B8:2A:72:77:88:99"
     assert "Dell" in merged[0].vendor
+
+
+def test_ping_sweep_builds_valid_commands(monkeypatch):
+    calls = []
+
+    class Result:
+        returncode = 0
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return Result()
+
+    monkeypatch.setattr(net.subprocess, "run", fake_run)
+    monkeypatch.setattr(net.shutil, "which", lambda name: "/bin/ping" if name == "ping" else None)
+    hosts = net.ping_sweep(ipaddress.ip_network("192.0.2.0/30"), max_hosts=2, workers=2)
+    assert len(hosts) == 2
+    assert calls
+    assert all(len(call) in (5, 6) for call in calls)
+    assert calls[0][-1] in {"192.0.2.1", "192.0.2.2"}
 
 
 def test_parse_windows_arp_a():
