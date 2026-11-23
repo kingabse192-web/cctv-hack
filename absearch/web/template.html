@@ -804,6 +804,13 @@
 
   function addEmptyState(host) {
     const empty = make("div", "empty");
+    if (!devices.length) {
+      empty.appendChild(make("h3", null, "No devices were discovered"));
+      empty.appendChild(make("p", null,
+        "Check that you are on the right network, that nmap is installed, and that the scan was authorized. Try --deep --camera-ports for cameras that do not answer a ping."));
+      host.appendChild(empty);
+      return;
+    }
     empty.appendChild(make("h3", null, "No devices match"));
     empty.appendChild(make("p", null, "Try a different search or clear the current filters."));
     const clear = make("button", "btn");
@@ -929,7 +936,7 @@
       host.appendChild(empty);
       return;
     }
-    host.classList.add("cat-" + slugFor(device));
+    host.className = "detail cat-" + slugFor(device);
 
     const head = make("div", "detail-head");
     const top = make("div", "top");

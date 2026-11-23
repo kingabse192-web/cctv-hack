@@ -430,23 +430,18 @@ def ping_sweep(
 
 
 def reverse_dns(ip: str, timeout: float = 0.8) -> str:
-    """Resolve a hostname with a hard timeout; never raise."""
+    """Resolve a hostname; the caller applies the hard timeout.
 
-    def resolve() -> str:
-        try:
-            hostname, _, _ = socket.gethostbyaddr(ip)
-            return hostname.rstrip(".")
-        except (OSError, socket.herror, socket.gaierror):
-            return ""
+    The old implementation created a thread pool per address, which could leak
+    hundreds of threads on a large scan.  Callers now share one bounded pool.
+    """
 
-    pool = ThreadPoolExecutor(max_workers=1)
-    future = pool.submit(resolve)
+    del timeout  # kept for API compatibility
     try:
-        return future.result(timeout=timeout)
-    except Exception:
+        hostname, _, _ = socket.gethostbyaddr(ip)
+        return hostname.rstrip(".")
+    except (OSError, socket.herror, socket.gaierror):
         return ""
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def merge_hosts(
@@ -504,14 +499,19 @@ def discover_hosts(
     if resolve_names:
         missing = [host for host in hosts if not host.hostname]
         if missing:
-            with ThreadPoolExecutor(max_workers=min(16, len(missing))) as pool:
-                futures = {pool.submit(reverse_dns, host.ip): host for host in missing}
-                for future in as_completed(futures):
+            pool = ThreadPoolExecutor(max_workers=min(16, len(missing)))
+            futures = {pool.submit(reverse_dns, host.ip): host for host in missing}
+            try:
+                for future in as_completed(futures, timeout=2.0):
                     host = futures[future]
                     try:
-                        host.hostname = future.result(timeout=1.5)
+                        host.hostname = future.result()
                     except Exception:
                         host.hostname = ""
+            except Exception:
+                pass  # A slow resolver must never fail the whole scan.
+            finally:
+                pool.shutdown(wait=False, cancel_futures=True)
 
     return hosts
 
