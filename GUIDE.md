@@ -51,6 +51,11 @@ pip install -e '.[bluetooth,ui]'
 
 ## 4. First run — completely safe demo
 
+**Easiest:** in the project folder, run `TRY_ME.sh` (Linux/WSL/macOS) or
+double-click `TRY_ME.bat` (Windows). Both start the demo automatically.
+
+Manually:
+
 ```bash
 python -m absearch --demo --web
 ```

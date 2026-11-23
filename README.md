@@ -44,6 +44,12 @@ writes JSON/CSV reports plus a polished single-page dashboard.
 
 ## Quick start
 
+**Easiest way:** run the launcher file in this folder — `TRY_ME.sh` on
+Linux/WSL (`bash TRY_ME.sh`) or `TRY_ME.bat` on Windows (double-click). It
+starts the safe demo dashboard at `http://127.0.0.1:8765/`.
+
+Or run it manually:
+
 ```bash
 # Preview with sample data (no scanning at all)
 python -m absearch --demo --web
