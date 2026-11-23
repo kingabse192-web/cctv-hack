@@ -5,6 +5,7 @@ from absearch.net import (
     HostRecord,
     merge_hosts,
     network_hosts,
+    parse_arp_a,
     parse_network,
     parse_nmap_discovery,
 )
@@ -58,6 +59,18 @@ def test_merge_hosts_fills_mac_from_arp():
     assert len(merged) == 1
     assert merged[0].mac == "B8:2A:72:77:88:99"
     assert "Dell" in merged[0].vendor
+
+
+def test_parse_windows_arp_a():
+    sample = """Interface: 192.168.1.10 --- 0x4
+  Internet Address      Physical Address      Type
+  192.168.1.1           50-c7-bf-12-34-56     dynamic
+  192.168.1.64          4c-bd-8f-aa-10-20     dynamic
+"""
+    records = parse_arp_a(sample)
+    assert records["192.168.1.1"].mac == "50:C7:BF:12:34:56"
+    assert "TP-Link" in records["192.168.1.1"].vendor
+    assert "Hikvision" in records["192.168.1.64"].vendor
 
 
 def test_network_helpers():

@@ -11,6 +11,7 @@ from absearch.report import (
     devices_csv,
     load_report,
     render_dashboard,
+    report_path,
     safe_json,
     write_reports,
 )
@@ -64,6 +65,14 @@ def test_html_escapes_device_supplied_values():
     assert "<script>x</script>" not in rendered
     assert "\\u003cimg" in rendered
     assert "\\u003cscript" in rendered
+
+
+def test_report_path_never_overwrites_when_called_twice(tmp_path):
+    first = report_path(tmp_path, "20261123-120000")
+    first.mkdir(parents=True)
+    second = report_path(tmp_path, "20261123-120000")
+    assert second != first
+    assert second.name == "scan-20261123-120000-2"
 
 
 def test_safe_json_escapes_script_breakout():

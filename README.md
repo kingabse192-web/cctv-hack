@@ -1,6 +1,6 @@
 # AB Search 😊 — Authorized Network & CCTV Inventory
 
-**Repository:** https://github.com/kingabse192-web/cctv-hack · **Guide:** [GUIDE.md](GUIDE.md) · **Credits:** [AUTHORS.md](AUTHORS.md)
+**Repository:** https://github.com/kingabse192-web/cctv-hack · **Guide:** [GUIDE.md](GUIDE.md) · **How it works:** [ARCHITECTURE.md](ARCHITECTURE.md) · **Credits:** [AUTHORS.md](AUTHORS.md)
 
 ```
  █████╗ ██████╗    ███████╗███████╗ █████╗ ██████╗  ██████╗██╗  ██╗

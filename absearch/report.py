@@ -252,7 +252,16 @@ def write_reports(
 
 def report_path(base_dir: Path, stamp: str | None = None) -> Path:
     stamp = stamp or dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    return Path(base_dir) / f"scan-{stamp}"
+    base = Path(base_dir)
+    candidate = base / f"scan-{stamp}"
+    if not candidate.exists():
+        return candidate
+    # Watch mode can run twice in the same second.  Never overwrite an
+    # earlier scan: add a short numeric suffix instead.
+    suffix = 2
+    while (base / f"scan-{stamp}-{suffix}").exists():
+        suffix += 1
+    return base / f"scan-{stamp}-{suffix}"
 
 
 def load_report(path: Path) -> dict[str, Any]:

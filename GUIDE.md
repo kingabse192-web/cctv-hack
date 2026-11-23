@@ -1,7 +1,8 @@
 # AB Search 😊 — User Guide
 
 This guide explains how AB Search works and how to use it safely. The project
-lives at **https://github.com/kingabse192-web/cctv-hack**.
+lives at **https://github.com/kingabse192-web/cctv-hack**. For the internal
+architecture and data flow, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 

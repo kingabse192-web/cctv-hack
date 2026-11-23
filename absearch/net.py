@@ -113,6 +113,27 @@ def default_gateway() -> tuple[str, str]:
     match = re.search(r"default via (\S+)(?: dev (\S+))?", output)
     if match:
         return match.group(1), match.group(2) or ""
+
+    # Windows: "route print 0.0.0.0" has numeric columns in every locale.
+    if os.name == "nt":
+        try:
+            output = subprocess.run(
+                ["route", "print", "0.0.0.0"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            ).stdout
+        except (OSError, subprocess.SubprocessError):
+            return "", ""
+        for line in output.splitlines():
+            parts = line.split()
+            if len(parts) >= 5 and parts[0] == "0.0.0.0" and parts[2] != "0.0.0.0":
+                try:
+                    ipaddress.ip_address(parts[2])
+                except ValueError:
+                    continue
+                return parts[2], parts[3]
     return "", ""
 
 
@@ -196,6 +217,28 @@ def is_private(network: ipaddress.IPv4Network) -> bool:
     return network.is_private and not network.is_loopback
 
 
+def parse_arp_a(text: str) -> dict[str, HostRecord]:
+    """Parse Windows/BSD ``arp -a`` output into MAC records."""
+
+    records: dict[str, HostRecord] = {}
+    for line in text.splitlines():
+        ip_match = _IPV4_RE.search(line)
+        mac_match = _MAC_RE.search(line)
+        if not ip_match or not mac_match:
+            continue
+        mac = normalize_mac(mac_match.group(0))
+        if not mac:
+            continue
+        ip = ip_match.group(0)
+        records[ip] = HostRecord(
+            ip=ip,
+            mac=mac,
+            vendor=lookup_vendor(mac),
+            source="arp",
+        )
+    return records
+
+
 def arp_table() -> dict[str, HostRecord]:
     """Read the kernel neighbour table (no packets are sent)."""
 
@@ -240,7 +283,7 @@ def arp_table() -> dict[str, HostRecord]:
     try:
         lines = Path("/proc/net/arp").read_text(encoding="utf-8").splitlines()
     except OSError:
-        return records
+        lines = []
     for line in lines[1:]:
         parts = line.split()
         if len(parts) < 6:
@@ -255,6 +298,22 @@ def arp_table() -> dict[str, HostRecord]:
             vendor=lookup_vendor(mac),
             source="arp",
         )
+    if records:
+        return records
+
+    # Windows (and some BSDs): parse "arp -a" output.  Both Windows and Linux
+    # syntaxes contain an IPv4 address and a MAC on the same data line.
+    try:
+        output = subprocess.run(
+            ["arp", "-a"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return records
+    records.update(parse_arp_a(output))
     return records
 
 
@@ -342,10 +401,16 @@ def ping_sweep(
     hosts = network_hosts(network, limit=max_hosts)
     found: list[str] = []
 
+    ping_args = (
+        [ping, "-n", "1", "-w", "1000", ip]
+        if os.name == "nt"
+        else [ping, "-c", "1", "-W", "1", ip]
+    )
+
     def probe(ip: str) -> str | None:
         try:
             result = subprocess.run(
-                [ping, "-c", "1", "-W", "1", ip],
+                ping_args[:-1] + [ip],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=2,

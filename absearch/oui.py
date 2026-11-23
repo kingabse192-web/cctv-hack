@@ -114,6 +114,8 @@ _SEARCH_PATHS = (
     Path("/usr/share/ieee-data/oui.txt"),
     Path("/var/lib/ieee-data/oui.txt"),
     Path("/usr/share/misc/oui.txt"),
+    Path(r"C:\Program Files (x86)\Nmap\nmap-mac-prefixes"),
+    Path(r"C:\Program Files\Nmap\nmap-mac-prefixes"),
 )
 
 
