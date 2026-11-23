@@ -1,0 +1,46 @@
+POPULAR DEFAULT USERNAMES AND PASSWORDS (WIFI, ROUTERS, & CCTV)
+=================================================================
+DEFAULT USERNAME          | DEFAULT PASSWORD                   
+-----------------------------------------------------------------
+admin                     | admin                              
+admin                     | password                           
+admin                     | (leave blank)                      
+root                      | root                               
+root                      | admin                              
+admin                     | 1234                               
+admin                     | 12345                              
+admin                     | default                            
+user                      | user                               
+user                      | password                           
+guest                     | guest                              
+administrator             | (leave blank)                      
+cisco                     | cisco                              
+ubnt                      | ubnt                               
+motorola                  | motorola                           
+support                   | support                            
+admin                     | smcadmin                           
+root                      | pass                               
+admin                     | epicrouter                         
+admin                     | ttnet                              
+admin                     | 123456                             
+admin                     | 888888                             
+admin                     | 9999                               
+admin                     | fliradmin                          
+admin                     | meinsm                             
+admin                     | juantest                           
+admin                     | tlm_admin                          
+supervisor                | supervisor                         
+root                      | system                             
+root                      | passw                              
+service                   | service                            
+telecomadmin              | admintelecom                       
+admin                     | admin123                           
+admin                     | admin1234                          
+useradmin                 | useradmin                          
+tech                      | tech                               
+admin                     | sky                                
+admin                     | msn                                
+admin                     | zteoem                             
+=================================================================
+Note: If these do not work, the device password has likely been changed.
+You may need to perform a physical factory reset to restore these defaults.

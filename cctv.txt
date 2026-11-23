@@ -1,0 +1,37 @@
+the plan is that 
+1. Main features
+Detect the current local Wi‑Fi/Ethernet network.
+  
+List connected devices.
+
+List all avelable  devices. 
+
+Display IP address, MAC address, hostname, and manufacturer.
+
+Detect common services such as HTTP, HTTPS, and RTSP
+
+Categorize devices as:
+
+Router
+
+Computer
+
+Phone
+
+Possible CCTV camera
+
+Unknown device
+
+Discover Bluetooth devices that are publicly discoverable.
+
+Export results to JSON or CSV.
+
+Open a device’s official web-management page.
+
+Allow manual login from thos text files i will loog in .
+
+and i will olso scane the camera opened pores and try to conect with them 
+
+and the pasword thing in the files in the pasworgd that i make in the folders you can see it 
+
+and make sure that the "" image make it as it is and make it as a ascaric or somting

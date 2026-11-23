@@ -1,0 +1,24 @@
+Most Popular Default Usernames and Passwords
+
+USERNAME            PASSWORD
+--------------------------------
+admin               admin
+admin               password
+admin               (leave blank)
+root                root
+root                admin
+admin               1234
+admin               12345
+admin               default
+user                user
+user                password
+guest               guest
+administrator       (leave blank)
+cisco               cisco
+ubnt                ubnt
+motorola            motorola
+support             support
+admin               smcadmin
+root                pass
+admin               epicrouter
+admin               ttnet
